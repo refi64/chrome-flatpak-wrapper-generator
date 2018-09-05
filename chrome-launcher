@@ -1,0 +1,9 @@
+#!/usr/bin/bash
+
+app_path=`grep app-path /.flatpak-info | cut -d= -f2`
+instance_path=`grep instance-path /.flatpak-info | cut -d= -f2`
+
+flatpak-spawn --host \
+  --env=XDG_CACHE_HOME="$instance_path/cache" \
+  --env=XDG_DATA_HOME="$instance_path/data" \
+  "$app_path/chrome/start" "$@"

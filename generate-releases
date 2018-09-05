@@ -1,0 +1,84 @@
+#!/usr/bin/bash
+
+set -ex
+
+sources=`realpath "$PWD"`
+
+for channel in ${@:-stable beta unstable}; do
+  curl -L "https://dl.google.com/linux/direct/google-chrome-${channel}_current_amd64.deb" > \
+    google-chrome-$channel.deb
+  [ -f google-chrome-$channel.sha256 ] && \
+    sha256sum --quiet -c google-chrome-$channel.sha256 >/dev/null && \
+    continue ||:
+
+  rm -rf work-$channel
+  mkdir work-$channel
+  pushd work-$channel
+
+  ar x ../google-chrome-$channel.deb
+
+  if [ "$channel" == "stable" ]; then
+    app=com.google.Chrome
+    name='Google Chrome'
+    exec=google-chrome
+    icon_suffix=
+  else
+    case $channel in
+    beta) uchannel=Beta; icon_suffix=_beta; ;;
+    unstable) uchannel=Dev; icon_suffix=_dev ;;
+    esac
+
+    app=com.google.Chrome.$channel
+    name="($uchannel) Google Chrome"
+    exec=google-chrome-$channel
+  fi
+
+  flatpak build-init build $app org.freedesktop.Sdk//18.08 org.freedesktop.Platform//18.08
+
+  tar xvf data.tar.xz
+  mkdir -p build/files/share
+
+  cp -rv opt/google/chrome* build/files/chrome
+  cp -rv usr/share/{appdata,applications} build/files/share
+
+  pushd build/files
+
+  ln -s $exec chrome/start
+  mkdir bin
+  cp "$sources/chrome-launcher" bin
+  rm -rf chrome/cron
+
+  for icon in 16 22 24 32 48 64 128 256; do
+    dir=share/icons/hicolor/${icon}x${icon}/apps
+    mkdir -p $dir
+    cp chrome/product_logo_$icon$icon_suffix.png $dir/$app.png
+  done
+
+  mv share/appdata/{$exec,$app}.appdata.xml
+  sed -i "s/$exec.desktop/$app.desktop/" share/appdata/$app.appdata.xml
+
+  mkdir -p share/app-info/xmls
+
+  mv share/applications/{$exec,$app}.desktop
+  desktop-file-edit --set-name="$name" --set-icon=$app share/applications/$app.desktop
+  sed -i "s|/usr/bin/google-chrome-$channel|/app/bin/chrome-launcher|" share/applications/$app.desktop
+
+  mkdir chrome/xdg-redirect
+  cp "$sources/xdg-redirect" chrome/xdg-redirect
+  ln -s xdg-redirect chrome/xdg-redirect/xdg-mime
+  ln -s xdg-redirect chrome/xdg-redirect/xdg-settings
+
+  sed -i '/CHROME_VERSION_EXTRA/aexport PATH="$HERE/xdg-redirect:$PATH"' chrome/$exec
+  sed -i '/CHROME_VERSION_EXTRA/aexport XDG_REDIRECT_ORIGINAL_PATH="$PATH"' chrome/$exec
+
+  popd
+
+  flatpak build build appstream-compose --prefix=/app --origin=flatpak --basename=$app $app
+  flatpak build-finish build --talk-name=org.freedesktop.Flatpak
+  flatpak build-export "$sources/repo" build
+
+  popd
+  sha256sum google-chrome-$channel.deb > google-chrome-$channel.sha256
+done
+
+flatpak build-update-repo repo

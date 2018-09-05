@@ -1,0 +1,13 @@
+#!/bin/sh
+
+command=`basename "$0"`
+echo "$command $@" >>/tmp/xdg-redirect
+export PATH="$XDG_REDIRECT_ORIGINAL_PATH"
+
+if [ "$command" = "xdg-settings" ] && ([ "$1" = "set" ] || [ "$1" = "check" ]) && \
+   [ "$2" = "default-web-browser" ]; then
+  desktop=`echo $3 | sed 's/google-chrome/com.google.Chrome/;s/-/./'`
+  exec $command "$1" default-web-browser "$desktop"
+fi
+
+$command "$@"
